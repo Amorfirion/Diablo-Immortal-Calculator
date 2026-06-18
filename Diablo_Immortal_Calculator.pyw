@@ -2,226 +2,823 @@ import tkinter as tk
 import math
 from tkinter import ttk
 
-# Combat Rating Tab
-class CombatRatingCalc:
-    ENTRY_WIDTH = 12
-
+class NormalGemsCalc:
     def __init__(self, parent):
-        self.frame = ttk.Frame(parent)
-        self.fields = []
-
-        self.current_var = tk.StringVar(value='0')
-        self.potential_var = tk.StringVar(value='+0')
-
-        self.max_cr_green_var = tk.StringVar(value='0')
-        self.max_cr_orange_var = tk.StringVar(value='0')
-
-        self.diff_green_var = tk.StringVar(value='+0')
-        self.diff_orange_var = tk.StringVar(value='+0')
-
-        self.green_labels = [
-            "Neck", "Waist", "Hands", "Feet",
-            "Ring 1", "Ring 2", "Wrist 1", "Wrist 2"
-        ]
-
-        self.orange_labels = [
-            "Head", "Chest", "Shoulders", "Legs",
-            "Main Hand 1", "Off-Hand 1",
-            "Main Hand 2", "Off-Hand 2"
-        ]
-
-        self.green_vars = [tk.StringVar(value='0') for _ in self.green_labels]
-        self.orange_vars = [tk.StringVar(value='0') for _ in self.orange_labels]
-
-        self.build_ui()
-        self.calculate_potential_cr()
-
-    def build_ui(self):
+        self.frame = ttk.Frame(parent, width=500, height=500)
+        self.frame.pack_propagate(False)
         self.frame.pack(fill="both", expand=True)
 
-        self.add_separator(250, 10, 430, 2, 'vertical', '#585656')
+        self.req_copies = [3**(i-1) for i in range(1, 11)]
+        self.base_fees = {6: 1, 7: 5, 8: 15, 9: 35, 10: 75}
+        
+        self.cum_costs = {i: 0 for i in range(1, 11)}
+        for r in range(6, 11):
+            self.cum_costs[r] = (self.cum_costs[r-1] * 3) + self.base_fees[r]
+        
+        self.rank_vars = [tk.StringVar(value='0') for _ in range(10)]
+        self.target_rank_var = tk.StringVar(value='1')
+        self.target_qty_var = tk.StringVar(value='1')
+        self.market_val_var = tk.StringVar(value='0')
+        self.total_have_var = tk.StringVar(value='0')
+        self.total_leftover_var = tk.StringVar(value='0')
+        self.crystals_needed_var = tk.StringVar(value='0')
+        self.platinum_needed_var = tk.StringVar(value='0')
 
-        self.add_field("Current CR", 145, 10, 'lightblue', self.current_var, formatted=True)
+        self.coords = {
+            "top_y": 10,
+            "row_height": 24,
+            "col1_x": 15,
+            "col2_x": 140,
+            "table_start_y": 80,
+            "divider_x": 260,
+            "legend_x": 285,
+            "legend_y": 10
+        }
 
-        self.add_field(
-            "Potential CR", 280, 10, 'lightblue',
-            self.potential_var, fg='green',
-            formatted=True, readonly=True
-        )
+        self.build_ui()
+        self.update_count()
 
-        self.add_field("Highest avail", 50, 60, 'lightgreen', self.max_cr_green_var, formatted=True)
+    def build_ui(self):
+        c = self.coords
+        vcmd = (self.frame.register(lambda P: P.isdigit() or P == ""), '%P')
 
-        self.add_field(
-            "CR Increase", 145, 60, 'lightgreen',
-            self.diff_green_var, fg='green',
-            formatted=True, readonly=True
-        )
+        self.add_separator(self.frame, c["divider_x"], 10, 460, 2, 'vertical', '#585656')
 
-        self.add_field("Highest avail", 280, 60, 'orange', self.max_cr_orange_var, formatted=True)
+        tk.Label(self.frame, text="Target Rank:", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=c["top_y"])
+        t_ent = tk.Entry(self.frame, textvariable=self.target_rank_var, width=8, justify='right', validate='key', validatecommand=vcmd)
+        t_ent.place(x=c["col2_x"], y=c["top_y"])
 
-        self.add_field(
-            "CR Increase", 370, 60, 'orange',
-            self.diff_orange_var, fg='green',
-            formatted=True, readonly=True
-        )
+        qty_y = c["top_y"] + 25
+        tk.Label(self.frame, text="Target Quantity:", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=qty_y)
+        q_ent = tk.Entry(self.frame, textvariable=self.target_qty_var, width=8, justify='right', validate='key', validatecommand=vcmd)
+        q_ent.place(x=c["col2_x"], y=qty_y)
 
-        self.build_group_fields(self.green_labels, self.green_vars, 50, 'lightgreen')
-        self.build_group_fields(self.orange_labels, self.orange_vars, 280, 'orange')
+        header_y = c["table_start_y"] - 22
+        tk.Label(self.frame, text="Rank", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=header_y)
+        tk.Label(self.frame, text="Have Quantity", font=("Arial", 10, "bold"), fg="black").place(x=c["col2_x"] - 15, y=header_y)
 
-    def build_group_fields(self, labels, vars_, start_x, color):
-        positions = [
-            (start_x, 120), (start_x + 95, 120),
-            (start_x, 170), (start_x + 95, 170),
-            (start_x, 220), (start_x + 95, 220),
-            (start_x, 270), (start_x + 95, 270)
+        for i in range(10):
+            y = c["table_start_y"] + i * c["row_height"]
+            tk.Label(self.frame, text=f"{i + 1}", font=("Arial", 10), fg="black").place(x=c["col1_x"] + 10, y=y)
+            ev = self.rank_vars[i]
+            ent = tk.Entry(self.frame, textvariable=ev, width=8, justify='right', validate='key', validatecommand=vcmd)
+            ent.place(x=c["col2_x"], y=y)
+            ent.bind("<Up>", self.on_arrow_up)
+            ent.bind("<Down>", self.on_arrow_down)
+            
+            ev.trace_add("write", lambda *a: self.update_count())
+
+        for e in [t_ent, q_ent]:
+            e.bind("<Up>", self.on_arrow_up)
+            e.bind("<Down>", self.on_arrow_down)
+        self.target_rank_var.trace_add("write", lambda *a: self.update_count())
+        self.target_qty_var.trace_add("write", lambda *a: self.update_count())
+
+        tk.Label(self.frame, text="Copies Required:", font=("Arial", 10, "bold"), fg="black").place(x=c["legend_x"], y=c["legend_y"])
+        for idx, val in enumerate(self.req_copies, start=1):
+            lbl = f"R{idx}: {val:,}"
+            tk.Label(self.frame, text=lbl, font=("Arial", 9), fg="black").place(x=c["legend_x"], y=c["legend_y"] + 20 + (idx-1) * 19)
+
+        c_legend_y = c["legend_y"] + 230
+        tk.Label(self.frame, text="Crystals Required:", font=("Arial", 10, "bold"), fg="black").place(x=c["legend_x"], y=c_legend_y)
+        for i, (rnk, cost) in enumerate(self.base_fees.items()):
+            tk.Label(self.frame, text=f"R{rnk}: {cost}", font=("Arial", 9), fg="black").place(x=c["legend_x"], y=c_legend_y + 20 + (i * 19))
+
+        results_y = c["table_start_y"] + 10 * c["row_height"] + 2
+        entry_x = c["col2_x"] + 25 
+        res_width = 14 
+        
+        tk.Label(self.frame, text="Total Copies:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y)
+        self.total_have_entry = tk.Entry(self.frame, textvariable=self.total_have_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold"))
+        self.total_have_entry.place(x=entry_x - 25, y=results_y)
+
+        tk.Label(self.frame, text="Total Remaining:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 24)
+        tk.Entry(self.frame, textvariable=self.total_leftover_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 24)
+
+        tk.Label(self.frame, text="Market Value:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 48)
+        m_ent = tk.Entry(self.frame, textvariable=self.market_val_var, width=res_width, justify='right', font=("Arial", 10))
+        m_ent.place(x=entry_x - 25, y=results_y + 48)
+        m_ent.bind("<Up>", self.on_arrow_up)
+        m_ent.bind("<Down>", self.on_arrow_down)
+        self.market_val_var.trace_add("write", lambda *a: self.update_count())
+
+        tk.Label(self.frame, text="Crystals Needed:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 72)
+        tk.Entry(self.frame, textvariable=self.crystals_needed_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 72)
+
+        tk.Label(self.frame, text="Platinum Needed:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 96)
+        tk.Entry(self.frame, textvariable=self.platinum_needed_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 96)
+
+    def add_separator(self, parent, x, y, length, thickness, orientation, color):
+        f = tk.Frame(parent, bg=color)
+        f.place(x=x, y=y, width=length if orientation=='horizontal' else thickness, height=thickness if orientation=='horizontal' else length)
+
+    def update_count(self):
+        def parse_int(var, default=0):
+            try:
+                val = var.get().strip().replace(',', '')
+                return int(val) if val else default
+            except: return default
+
+        tr = max(1, min(10, parse_int(self.target_rank_var, 1)))
+        tq = max(1, parse_int(self.target_qty_var, 1))
+        
+        if self.target_qty_var.get() and parse_int(self.target_qty_var, 1) < 1:
+            self.target_qty_var.set("1")
+            
+        mv = parse_int(self.market_val_var, 0)
+
+        cost_per_target_gem = self.req_copies[tr - 1]
+        total_needed_equiv = cost_per_target_gem * tq
+        have_equiv = sum(parse_int(self.rank_vars[i]) * self.req_copies[i] for i in range(10))
+        remaining_copies = max(total_needed_equiv - have_equiv, 0)
+
+        total_crystals_goal = self.cum_costs[tr] * tq
+        have_crystal_val = sum(parse_int(self.rank_vars[i]) * self.cum_costs[i+1] for i in range(10))
+        final_crystals = max(0, total_crystals_goal - have_crystal_val)
+        
+        crystal_plat = final_crystals * 500
+        market_plat = remaining_copies * mv
+        platinum_total = crystal_plat + market_plat
+        
+        if have_equiv > total_needed_equiv:
+            excess = have_equiv - total_needed_equiv
+            self.total_have_var.set(f"Excess: {excess:,}")
+            self.total_have_entry.config(fg="red")
+        else:
+            self.total_have_var.set(f"{have_equiv:,}")
+            self.total_have_entry.config(fg="black")
+
+        self.total_leftover_var.set(f"{remaining_copies:,}")
+        self.crystals_needed_var.set(f"{final_crystals:,}")
+        self.platinum_needed_var.set(f"{platinum_total:,}")
+
+    def on_arrow_up(self, event):
+        entry = event.widget
+        try: val = int(entry.get().replace(',', '') or 0)
+        except: val = 0
+        if entry.cget('textvariable') == str(self.target_rank_var): new_val = min(10, val + 1)
+        else: new_val = val + 1
+        entry.delete(0, tk.END); entry.insert(0, str(new_val))
+        self.update_count()
+        return "break"
+
+    def on_arrow_down(self, event):
+        entry = event.widget
+        try: val = int(entry.get().replace(',', '') or 0)
+        except: val = 0
+        
+        if entry.cget('textvariable') in (str(self.target_rank_var), str(self.target_qty_var)): 
+            new_val = max(1, val - 1)
+        else: 
+            new_val = max(0, val - 1)
+            
+        entry.delete(0, tk.END); entry.insert(0, str(new_val))
+        self.update_count()
+        return "break"
+        
+    def reset(self):
+        self.target_rank_var.set("1")
+        self.target_qty_var.set("1")
+        self.market_val_var.set("0")
+        for v in self.rank_vars:
+            v.set("0")
+        self.update_count()
+
+class LegendaryGemsCalc:
+    SECTION_CONFIGS = [
+        {"label": "1-Star Gem", "stars": 1, "y": 0, "height": 150},
+        {"label": "2-Star Gem", "stars": 2, "y": 145, "height": 150},
+        {"label": "2-5 Star Gem", "stars": 2, "y": 290, "height": 170},
+    ]
+
+    FIELD_Y = {
+        "current": 34,
+        "target": 58,
+        "gp_bag": 82,
+        "cp_bag": 106
+    }
+
+    RESULT_Y = {
+        "res": 34,
+        "cr": 58,
+        "gp": 82,
+        "cp": 106
+    }
+
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, width=500, height=500)
+
+        self.frame.pack_propagate(False)
+        self.frame.pack(fill="both", expand=False)
+
+        self.widgets = []
+        self.star_buttons = []
+
+        self.current_stars = 2
+
+        self.build_ui()
+
+    def build_ui(self):
+        for idx, section in enumerate(self.SECTION_CONFIGS):
+            frame = tk.Frame(
+                self.frame,
+                width=490,
+                height=section["height"]
+            )
+
+            frame.place(x=5, y=section["y"])
+            frame.pack_propagate(False)
+
+            self.create_section(frame, section, idx)
+
+    def create_section(self, parent, section, idx):
+        vars_ = {
+            "rank": tk.StringVar(value='2'),
+            "current": tk.StringVar(value='1'),
+            "res": tk.StringVar(value='+0'),
+            "gp": tk.StringVar(value='0'),
+            "copies": tk.StringVar(value='0'),
+            "cr": tk.StringVar(value='+0'),
+            "weighted_gp": tk.StringVar(value='0'),
+            "weighted_cp": tk.StringVar(value='0')
+        }
+
+        self.widgets.append(vars_)
+
+        tk.Label(
+            parent,
+            text=section["label"],
+            font=("Arial", 10, "bold")
+        ).place(x=30, y=10)
+
+        self.build_stars(parent, section, idx)
+
+        if idx < 2:
+            self.add_separator(parent, 30, 140, 420, 2)
+
+        left_fields = [
+            ("Current Rank:", vars_["current"], self.FIELD_Y["current"], 1, 10),
+            ("Target Rank:", vars_["rank"], self.FIELD_Y["target"], 2, 10),
+            ("Gem Power (bag):", vars_["weighted_gp"], self.FIELD_Y["gp_bag"], 0, 99999),
+            ("Copies (bag):", vars_["weighted_cp"], self.FIELD_Y["cp_bag"], 0, 9999)
         ]
 
-        for (x, y), label, var in zip(positions, labels, vars_):
-            self.add_field(label, x, y, color, var, formatted=True)
+        for label, var, y, min_v, max_v in left_fields:
+            self.create_input_field(
+                parent,
+                label,
+                var,
+                y,
+                idx,
+                min_v,
+                max_v
+            )
 
-    def add_separator(self, x, y, length, thickness=1, orientation='horizontal', color='black'):
-        line = tk.Frame(
-            self.frame,
-            bg=color,
-            height=thickness if orientation == 'horizontal' else length,
-            width=length if orientation == 'horizontal' else thickness
+        results = [
+            ("Resonance:", vars_["res"], self.RESULT_Y["res"], 'green'),
+            ("Combat Rating:", vars_["cr"], self.RESULT_Y["cr"], 'green'),
+            ("GP Needed:", vars_["gp"], self.RESULT_Y["gp"]),
+            ("Copies Needed:", vars_["copies"], self.RESULT_Y["cp"])
+        ]
+
+        for item in results:
+            self.create_result_field(parent, *item)
+
+        self.update_resonance_and_costs(idx)
+
+    def build_stars(self, parent, section, idx):
+        if idx < 2:
+            for i in range(section["stars"]):
+                tk.Label(
+                    parent,
+                    text='★',
+                    font=("Arial", 12),
+                    fg='#FFD700'
+                ).place(x=140 + (i * 20), y=6)
+
+            return
+
+        for i in range(5):
+            btn = tk.Button(
+                parent,
+                text='★' if i < self.current_stars else '☆',
+                font=("Arial", 12),
+                bd=0,
+                fg='#FFD700',
+                command=lambda s=i: self.set_stars(s + 1)
+            )
+
+            btn.place(x=140 + (i * 20), y=6, width=18, height=22)
+
+            self.star_buttons.append(btn)
+
+    def create_input_field(self, parent, label, var, y, idx, min_v, max_v):
+        tk.Label(parent, text=label).place(x=30, y=y + 2)
+
+        entry = tk.Entry(parent, textvariable=var, justify='right')
+
+        entry.place(x=140, y=y, width=50, height=20)
+
+        entry.bind(
+            "<Up>",
+            lambda e, v=var, mn=min_v, mx=max_v, i=idx:
+            self.adj_val(v, 1, mn, mx, i)
         )
-        line.place(x=x, y=y)
+
+        entry.bind(
+            "<Down>",
+            lambda e, v=var, mn=min_v, mx=max_v, i=idx:
+            self.adj_val(v, -1, mn, mx, i)
+        )
+
+        entry.bind(
+            "<KeyRelease>",
+            lambda e, i=idx: self.update_resonance_and_costs(i)
+        )
+
+    def create_result_field(self, parent, label, var, y, fg='black'):
+        tk.Label(parent, text=label).place(x=280, y=y + 2)
+
+        tk.Entry(
+            parent,
+            textvariable=var,
+            justify='right',
+            state='readonly',
+            fg=fg
+        ).place(x=380, y=y, width=65, height=20)
+
+    def add_separator(self, parent, x, y, length, thickness, color='#585656'):
+        tk.Frame(
+            parent,
+            bg=color,
+            width=length,
+            height=thickness
+        ).place(x=x, y=y)
 
     def parse_int(self, value):
         try:
-            return int(str(value).replace(',', '').replace('+', ''))
+            return int(value or 0)
         except ValueError:
             return 0
 
-    def format_number_for_display(self, value, plus_sign=True):
-        display = f"{value:,}" if abs(value) >= 10000 else str(value)
-        return f"+{display}" if plus_sign else display
-
-    def adj_val(self, var, delta):
+    def adj_val(self, var, delta, min_val, max_val, idx):
         value = self.parse_int(var.get())
-        var.set(str(max(0, value + delta)))
-        self.calculate_potential_cr()
 
-    def bind_adjustment_keys(self, entry, var):
-        entry.bind("<Up>", lambda e: self.adj_val(var, 1))
-        entry.bind("<Down>", lambda e: self.adj_val(var, -1))
+        value = max(min_val, min(max_val, value + delta))
 
-    def add_field(
-        self,
-        label_text,
-        x,
-        y,
-        label_bg,
-        var,
-        fg='black',
-        formatted=False,
-        readonly=False
-    ):
-        entry = tk.Entry(
-            self.frame,
-            textvariable=var,
-            justify='right',
-            width=self.ENTRY_WIDTH,
-            bg='gray' if readonly else 'white',
-            fg=fg
-        )
+        var.set(str(value))
 
-        entry.place(x=x, y=y + 20)
+        self.update_resonance_and_costs(idx)
 
-        if readonly:
-            entry.configure(state='readonly')
-        else:
-            self.bind_adjustment_keys(entry, var)
+    def set_stars(self, count):
+        self.current_stars = max(2, min(count, 5))
 
-        if formatted:
-            entry.old_value = var.get()
-            entry.bind('<KeyRelease>', lambda e: self.on_entry_change(var, entry))
+        for i, btn in enumerate(self.star_buttons):
+            btn.config(text='★' if i < self.current_stars else '☆')
 
-        label = tk.Label(self.frame, text=label_text, bg=label_bg)
-        label.place(x=x, y=y, width=entry.winfo_reqwidth())
+        self.update_resonance_and_costs(2)
 
-        self.fields.append((var, entry))
+    def get_section_costs(self, idx):
+        if idx == 0:
+            return {
+                "res": 15,
+                "cr": 4,
+                "gp": [1,5,10,15,20,25,30,40,50],
+                "copies": [0,0,0,0,1,1,1,1,1]
+            }
 
-    def on_entry_change(self, var, entry):
-        raw = ''.join(c for c in var.get() if c.isdigit())
-        value = int(raw) if raw else 0
+        if idx == 1:
+            return {
+                "res": 30,
+                "cr": 6,
+                "gp": [5,15,25,20,85,85,105,150,195],
+                "copies": [0,0,1,2,5,5,6,9,12]
+            }
 
-        formatted = self.format_number_for_display(
-            value,
-            plus_sign=var in (
-                self.diff_green_var,
-                self.diff_orange_var,
-                self.potential_var
-            )
-        )
+        stars = self.current_stars
 
-        if formatted == getattr(entry, 'old_value', None):
+        return {
+            "res": 80 if stars < 4 else (90 if stars == 4 else 100),
+            "cr": {2:12, 3:18, 4:22, 5:24}[stars],
+            "gp": [50,75,100,250,375,725,725,1075,1075],
+            "copies": [0,1,1,5,6,12,12,18,18]
+        }
+
+    def update_resonance_and_costs(self, idx):
+        w = self.widgets[idx]
+
+        rank = max(1, min(10, self.parse_int(w["rank"].get())))
+        current = max(1, min(10, self.parse_int(w["current"].get())))
+
+        w["rank"].set(str(rank))
+        w["current"].set(str(current))
+
+        if current >= rank:
+            w["res"].set("+0")
+            w["cr"].set("+0")
+            w["gp"].set("0")
+            w["copies"].set("0")
             return
 
-        entry.delete(0, tk.END)
-        entry.insert(0, formatted)
+        weighted_gp = self.parse_int(w["weighted_gp"].get())
+        weighted_cp = self.parse_int(w["weighted_cp"].get())
 
-        entry.old_value = formatted
-        entry.icursor(tk.END)
+        config = self.get_section_costs(idx)
 
-        self.calculate_potential_cr()
+        diff = rank - current
 
-    def calculate_group_diff(self, max_var, group_vars):
-        max_value = self.parse_int(max_var.get())
-        total = 0
+        gp_needed = sum(config["gp"][r - 1] for r in range(current, rank))
+        cp_needed = sum(config["copies"][r - 1] for r in range(current, rank))
 
-        for var in group_vars:
-            value = self.parse_int(var.get())
+        w["res"].set(f"+{config['res'] * diff}")
+        w["cr"].set(f"+{config['cr'] * diff}")
 
-            if 0 < value < max_value:
-                total += max_value - value
-
-        return total
-
-    def calculate_potential_cr(self):
-        current = self.parse_int(self.current_var.get())
-
-        green_diff = self.calculate_group_diff(
-            self.max_cr_green_var,
-            self.green_vars
-        )
-
-        orange_diff = self.calculate_group_diff(
-            self.max_cr_orange_var,
-            self.orange_vars
-        )
-
-        total = current + green_diff + orange_diff
-
-        self.update_fg_color(self.diff_green_var, green_diff)
-        self.update_fg_color(self.diff_orange_var, orange_diff)
-        self.update_fg_color(self.potential_var, total)
-
-    def update_fg_color(self, var, value):
-        var.set(self.format_number_for_display(value, plus_sign=True))
+        w["gp"].set(str(max(0, gp_needed - weighted_gp)))
+        w["copies"].set(str(max(0, cp_needed - weighted_cp)))
 
     def reset(self):
-        for var in [
-            self.current_var,
-            self.max_cr_green_var,
-            self.max_cr_orange_var
-        ]:
-            var.set("0")
+        self.set_stars(2)
 
-        for var in [
-            self.diff_green_var,
-            self.diff_orange_var,
-            self.potential_var
-        ]:
-            var.set("+0")
+        for idx, w in enumerate(self.widgets):
+            w["rank"].set("2")
+            w["current"].set("1")
+            w["weighted_gp"].set("0")
+            w["weighted_cp"].set("0")
 
-        for var in self.green_vars + self.orange_vars:
-            var.set("0")
+            self.update_resonance_and_costs(idx)
+        
+class InternalGemsCalc:
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, width=500, height=500)
+        self.frame.pack_propagate(False)
 
-        self.calculate_potential_cr()
+        self.widgets = []
+        self.star_buttons = []
+        self.current_stars = 2
+
+        self.sections = [
+            {"stars": 1, "label": "1-Star Gem", "y": 0, "h": 150},
+            {"stars": 2, "label": "2-Star Gem", "y": 145, "h": 150},
+            {"stars": 2, "label": "2-5 Star Gem", "y": 290, "h": 170},
+        ]
+
+        self.build_ui()
+
+    def build_ui(self):
+        for i, s in enumerate(self.sections):
+            f = tk.Frame(self.frame, width=490, height=s["h"])
+            f.place(x=5, y=s["y"])
+            f.pack_propagate(False)
+            self.create_section(f, s, i)
+
+    def create_section(self, parent, section, idx):
+        v = {
+            "rank": tk.StringVar(value="2"),
+            "curr": tk.StringVar(value="1"),
+            "res": tk.StringVar(value="+0"),
+            "gp": tk.StringVar(value="0"),
+            "cp": tk.StringVar(value="0"),
+            "wgp": tk.StringVar(value="0"),
+            "wcp": tk.StringVar(value="0"),
+        }
+
+        self.widgets.append(v)
+
+        tk.Label(parent, text=section["label"], font=("Arial", 10, "bold")).place(x=30, y=10)
+
+        self._build_stars(parent, section, idx)
+
+        if idx < 2:
+            self.add_separator(parent, 30, 140, 420, 2, 'horizontal', '#585656')
+
+        fields = [
+            ("Current Rank:", v["curr"], 34, 1, 9),
+            ("Target Rank:", v["rank"], 58, 2, 10),
+            ("Gem Power (bag):", v["wgp"], 82, 0, 99999),
+            ("Copies (bag):", v["wcp"], 106, 0, 9999),
+        ]
+
+        for label, var, y, mn, mx in fields:
+            tk.Label(parent, text=label).place(x=30, y=y + 2)
+            e = tk.Entry(parent, textvariable=var, justify="right")
+            e.place(x=140, y=y, width=50, height=20)
+
+            e.bind("<Up>", lambda ev, v=var, i=idx: self.adj_val(v, 1, mn, mx, i))
+            e.bind("<Down>", lambda ev, v=var, i=idx: self.adj_val(v, -1, mn, mx, i))
+            e.bind("<KeyRelease>", lambda ev, i=idx: self.update_resonance_and_costs(i))
+
+        results = [
+            ("Resonance:", v["res"], 34, "green", True),
+            ("GP Needed:", v["gp"], 82, None, False),
+            ("Copies Needed:", v["cp"], 106, None, False),
+        ]
+
+        for label, var, y, fg, ro in results:
+            tk.Label(parent, text=label).place(x=280, y=y + 2)
+
+            e = tk.Entry(parent, textvariable=var, justify="right", state="readonly")
+            if fg:
+                e.config(fg=fg)
+
+            e.place(x=380, y=y, width=65, height=20)
+
+        self.update_resonance_and_costs(idx)
+
+    def _build_stars(self, parent, section, idx):
+        if idx < 2:
+            for i in range(section["stars"]):
+                tk.Label(parent, text="★", font=("Arial", 12), fg="#FFD700").place(
+                    x=140 + i * 20, y=6
+                )
+            return
+
+        for i in range(5):
+            b = tk.Button(
+                parent,
+                text="★" if i < self.current_stars else "☆",
+                font=("Arial", 12),
+                bd=0,
+                fg="#FFD700",
+                command=lambda s=i: self.set_stars(s + 1),
+            )
+            b.place(x=140 + i * 20, y=6, width=18, height=22)
+            self.star_buttons.append(b)
+
+    def add_separator(self, parent, x, y, length, thickness, orientation, color):
+        tk.Frame(parent, bg=color).place(
+            x=x,
+            y=y,
+            width=length if orientation == "horizontal" else thickness,
+            height=thickness if orientation == "horizontal" else length,
+        )
+
+    def adj_val(self, var, delta, mn, mx, idx):
+        try:
+            v = int(var.get() or 0)
+        except ValueError:
+            v = 0
+
+        var.set(str(max(mn, min(mx, v + delta))))
+        self.update_resonance_and_costs(idx)
+
+    def set_stars(self, count):
+        self.current_stars = max(2, min(5, count))
+
+        for i, b in enumerate(self.star_buttons):
+            b.config(text="★" if i < self.current_stars else "☆")
+
+        self.update_resonance_and_costs(2)
+
+    def update_resonance_and_costs(self, idx):
+        w = self.widgets[idx]
+
+        try:
+            dr = max(2, min(10, int(w["rank"].get() or 0)))
+            cr = max(1, min(9, int(w["curr"].get() or 0)))
+
+            w["rank"].set(str(dr))
+            w["curr"].set(str(cr))
+
+            wg = int(w["wgp"].get() or 0)
+            wc = int(w["wcp"].get() or 0)
+
+        except:
+            return
+
+        if idx == 0:
+            res_m = 1
+            gp = [1,5,10,15,20,25,30,40,50]
+            cp = [0,0,0,0,1,1,1,1,1]
+
+        elif idx == 1:
+            res_m = 2
+            gp = [5,15,25,20,85,85,105,150,195]
+            cp = [0,0,1,2,5,5,6,9,12]
+
+        else:
+            s = self.current_stars
+            res_m = 10 if s in (2,3) else 10.5 if s == 4 else 11
+            gp = [50,75,100,250,375,725,725,1075,1075]
+            cp = [0,1,1,5,6,12,12,18,18]
+
+        if cr >= dr:
+            w["res"].set("+0")
+            w["gp"].set("0")
+            w["cp"].set("0")
+            return
+
+        diff = dr - cr
+        w["res"].set(f"+{diff * res_m:g}")
+
+        w["gp"].set(str(max(0, sum(gp[cr-1:dr-1]) - wg)))
+        w["cp"].set(str(max(0, sum(cp[cr-1:dr-1]) - wc)))
+
+    def reset(self):
+        self.set_stars(2)
+
+        for i, w in enumerate(self.widgets):
+            w["rank"].set("2")
+            w["curr"].set("1")
+            w["wgp"].set("0")
+            w["wcp"].set("0")
+            self.update_resonance_and_costs(i)
+
+class HoradricVesselsCalc:
+    vessel_labels = [
+        "Armor Penetration", "Armor", "Potency/Resistance", "Potency",
+        "Damage/Life", "Armor Penetration/Armor", "Life", "Resistance", "Damage"
+    ]
+    vessel_multiplier = [
+        (18, 0), (18, 0), (9, 9), (18, 0), (9, 9), (9, 9), (18, 0), (18, 0), (18, 0)
+    ]
+    MAX_RANK = 60
+
+    vessel_cost_per_rank_logic = [
+        10, 30, 50, 70, 90, 110, 130, 150, 200, 250,
+        300, 350, 400, 450, 500, 550, 600, 650, 700, 800,
+        900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1800, 2000,
+        2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600, 3800, 4100,
+        4400, 4700, 5000, 5300, 5600, 5900, 6200, 6500, 7000, 7500,
+        8000, 8500, 9000, 9500, 10000, 10500, 11000, 11500, 12000
+    ]
+
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent, width=500, height=500)
+        self.frame.pack_propagate(False)
+        
+        self.current_rank_vars = [tk.StringVar(value="1") for _ in range(9)]
+        self.target_rank_vars = [tk.StringVar(value="1") for _ in range(9)]
+        
+        self.stat_inc_vars = []
+        for m1, m2 in self.vessel_multiplier:
+            default_val = "+0" if m2 == 0 else "+0/+0"
+            self.stat_inc_vars.append(tk.StringVar(value=default_val))
+
+        self.cost_vars = [tk.StringVar(value="---") for _ in range(3)]
+        self.platinum_vars = [tk.StringVar(value="---") for _ in range(3)]
+        self.est_days_var = tk.StringVar(value="Estimated days: 0")
+
+        self.build_ui()
+
+    def build_ui(self):
+        self.frame.pack(fill="both", expand=True)
+        header_font = ("Arial", 10, "bold")
+
+        col_0_x, col_0_w = 10, 160
+        col_1_x, col_1_w = 170, 90
+        col_2_x, col_2_w = 270, 90
+        col_3_x, col_3_w = 360, 120
+        
+        upper_header_y = 10
+        row_start_y = 35
+        row_spacing = 22
+        entry_offset_x = 15
+        entry_w = 50
+        
+        sep_x, sep_y, sep_w = 10, 240, 480
+        
+        lower_header_y = 245
+        stone_cost_y = 270
+        platinum_cost_y = 295
+        eta_y = 340
+        
+        disc_x = 5
+        disc1_y = 380
+        disc2_y = 400
+        disc3_y = 420
+
+        tk.Label(self.frame, text="Vessel", font=header_font, anchor="w").place(x=col_0_x, y=upper_header_y, width=col_0_w)
+        tk.Label(self.frame, text="Current Rank", font=header_font, anchor="center").place(x=col_1_x, y=upper_header_y, width=col_1_w)
+        tk.Label(self.frame, text="Target Rank", font=header_font, anchor="center").place(x=col_2_x, y=upper_header_y, width=col_2_w)
+        tk.Label(self.frame, text="Stat Increase", font=header_font, anchor="center").place(x=col_3_x, y=upper_header_y, width=col_3_w)
+
+        for i, label in enumerate(self.vessel_labels):
+            y_pos = row_start_y + (i * row_spacing)
+            
+            tk.Label(self.frame, text=label, anchor='w').place(x=col_0_x, y=y_pos, width=col_0_w)
+            
+            cur_ent = tk.Entry(self.frame, textvariable=self.current_rank_vars[i], justify='right')
+            cur_ent.place(x=col_1_x + entry_offset_x, y=y_pos, width=entry_w)
+            cur_ent.bind("<Up>", lambda e, idx=i: self.adj_rank(idx, 1, self.current_rank_vars))
+            cur_ent.bind("<Down>", lambda e, idx=i: self.adj_rank(idx, -1, self.current_rank_vars))
+            self.current_rank_vars[i].trace_add("write", lambda *a, idx=i: self.update_row(idx))
+
+            tar_ent = tk.Entry(self.frame, textvariable=self.target_rank_vars[i], justify='right')
+            tar_ent.place(x=col_2_x + entry_offset_x, y=y_pos, width=entry_w)
+            tar_ent.bind("<Up>", lambda e, idx=i: self.adj_rank(idx, 1, self.target_rank_vars))
+            tar_ent.bind("<Down>", lambda e, idx=i: self.adj_rank(idx, -1, self.target_rank_vars))
+            self.target_rank_vars[i].trace_add("write", lambda *a, idx=i: self.update_row(idx))
+
+            tk.Label(self.frame, textvariable=self.stat_inc_vars[i], fg="green", anchor='center').place(x=col_3_x, y=y_pos, width=col_3_w)
+
+        self.add_separator(x=sep_x, y=sep_y, length=sep_w, thickness=2, orientation='horizontal', color='#585656')
+
+        tk.Label(self.frame, text="Stone Type", font=header_font, anchor="w").place(x=col_0_x, y=lower_header_y, width=col_0_w)
+        tk.Label(self.frame, text="Beryl", font=header_font, fg="green", anchor="center").place(x=col_1_x, y=lower_header_y, width=col_1_w)
+        tk.Label(self.frame, text="Garnet", font=header_font, fg="#ff3333", anchor="center").place(x=col_2_x, y=lower_header_y, width=col_2_w)
+        tk.Label(self.frame, text="Sapphire", font=header_font, fg="#3333ff", anchor="center").place(x=col_3_x, y=lower_header_y, width=col_3_w)
+
+        tk.Label(self.frame, text="Stone Cost:", font=("Arial", 9), anchor="w").place(x=col_0_x, y=stone_cost_y, width=col_0_w)
+        tk.Label(self.frame, textvariable=self.cost_vars[1], anchor="center").place(x=col_1_x, y=stone_cost_y, width=col_1_w) 
+        tk.Label(self.frame, textvariable=self.cost_vars[0], anchor="center").place(x=col_2_x, y=stone_cost_y, width=col_2_w) 
+        tk.Label(self.frame, textvariable=self.cost_vars[2], anchor="center").place(x=col_3_x, y=stone_cost_y, width=col_3_w)
+
+        tk.Label(self.frame, text="Platinum Cost:", font=("Arial", 9), anchor="w").place(x=col_0_x, y=platinum_cost_y, width=col_0_w)
+        tk.Label(self.frame, textvariable=self.platinum_vars[1], anchor="center").place(x=col_1_x, y=platinum_cost_y, width=col_1_w)
+        tk.Label(self.frame, textvariable=self.platinum_vars[0], anchor="center").place(x=col_2_x, y=platinum_cost_y, width=col_2_w)
+        tk.Label(self.frame, textvariable=self.platinum_vars[2], anchor="center").place(x=col_3_x, y=platinum_cost_y, width=col_3_w)
+
+        tk.Label(self.frame, textvariable=self.est_days_var, font=("Arial", 9), anchor="w").place(x=col_0_x, y=eta_y, width=300)
+
+        line1 = "Platinum cost is based on 18,000 for full clear, averaging 1,866 stones (~9.6 per stone)."
+        line2 = "The platinum cost affords a rank for 3 vessels at once that use different stone names."
+        line3 = "The estimated days is a division of the highest culling stone by 1866 daily average."
+        
+        tk.Label(self.frame, text=line1, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc1_y)
+        tk.Label(self.frame, text=line2, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc2_y)
+        tk.Label(self.frame, text=line3, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc3_y)
+
+    def add_separator(self, x, y, length, thickness=1, orientation='horizontal', color='#585656'):
+        line = tk.Frame(self.frame, bg=color, 
+                        height=thickness if orientation == 'horizontal' else length, 
+                        width=length if orientation == 'horizontal' else thickness)
+        line.place(x=x, y=y)
+
+    def adj_rank(self, idx, delta, var_list):
+        try:
+            curr_val = var_list[idx].get()
+            val = int(curr_val) if curr_val.isdigit() else 1
+
+            new_val = max(1, min(self.MAX_RANK, val + delta))
+            var_list[idx].set(str(new_val))
+        except:
+            var_list[idx].set("1")
+
+    def update_row(self, idx):
+        c_val = self.current_rank_vars[idx].get()
+        if c_val.isdigit():
+            c_rank = int(c_val)
+            if c_rank < 1:
+                self.current_rank_vars[idx].set("1")
+                c_rank = 1
+            elif c_rank > self.MAX_RANK:
+                self.current_rank_vars[idx].set(str(self.MAX_RANK))
+                c_rank = self.MAX_RANK
+        else:
+            c_rank = 1
+
+        t_val = self.target_rank_vars[idx].get()
+        if t_val.isdigit():
+            t_rank = int(t_val)
+            if t_rank < 1:
+                self.target_rank_vars[idx].set("1")
+                t_rank = 1
+            elif t_rank > self.MAX_RANK:
+                self.target_rank_vars[idx].set(str(self.MAX_RANK))
+                t_rank = self.MAX_RANK
+        else:
+            t_rank = 1
+
+        rank_diff = max(0, t_rank - c_rank)
+        m1, m2 = self.vessel_multiplier[idx]
+        self.stat_inc_vars[idx].set(f"+{rank_diff * m1}" if m2 == 0 else f"+{rank_diff * m1}/+{rank_diff * m2}")
+
+        group_mapping = {0: 0, 3: 0, 8: 0, 1: 1, 6: 1, 7: 1, 2: 2, 4: 2, 5: 2}
+        group_totals = [0, 0, 0]
+        for g_id in range(3):
+            vessels_in_group = [v_idx for v_idx, target_g in group_mapping.items() if target_g == g_id]
+            for v_idx in vessels_in_group:
+                c_str = self.current_rank_vars[v_idx].get()
+                t_str = self.target_rank_vars[v_idx].get()
                 
-# Gear Ranks Tab
+                cv = int(c_str) if c_str.isdigit() else 1
+                tv = int(t_str) if t_str.isdigit() else 1
+                
+                cv = max(1, min(self.MAX_RANK, cv))
+                tv = max(1, min(self.MAX_RANK, tv))
+                
+                if tv > cv:
+                    group_totals[g_id] += sum(self.vessel_cost_per_rank_logic[cv - 1 : tv - 1])
+
+            if group_totals[g_id] > 0:
+                self.cost_vars[g_id].set("{:,}".format(group_totals[g_id]))
+                self.platinum_vars[g_id].set("{:,}".format(math.ceil(group_totals[g_id] * 9.6)))
+            else:
+                self.cost_vars[g_id].set("---")
+                self.platinum_vars[g_id].set("---")
+
+        max_stone_cost = max(group_totals)
+        if max_stone_cost > 0:
+            days = max_stone_cost / 1866
+            self.est_days_var.set(f"Estimated days: {days:.1f}")
+        else:
+            self.est_days_var.set("Estimated days: 0")
+
+    def reset(self):
+        for i in range(9):
+            self.current_rank_vars[i].set("1")
+            self.target_rank_vars[i].set("1")
+            
 class GearRanksCalc:
     ENTRY_WIDTH = 12
 
@@ -489,802 +1086,6 @@ class GearRanksCalc:
 
         self.update_costs()
 
-# Legendary Gems Tab
-class LegendaryGemsCalc:
-    SECTION_CONFIGS = [
-        {"label": "1-Star Gem", "stars": 1, "y": 0, "height": 150},
-        {"label": "2-Star Gem", "stars": 2, "y": 145, "height": 150},
-        {"label": "2-5 Star Gem", "stars": 2, "y": 290, "height": 170},
-    ]
-
-    FIELD_Y = {
-        "current": 32,
-        "target": 56,
-        "gp_bag": 80,
-        "cp_bag": 104
-    }
-
-    RESULT_Y = {
-        "res": 32,
-        "cr": 56,
-        "gp": 80,
-        "cp": 104
-    }
-
-    def __init__(self, parent):
-        self.frame = ttk.Frame(parent, width=500, height=500)
-
-        self.frame.pack_propagate(False)
-        self.frame.pack(fill="both", expand=False)
-
-        self.widgets = []
-        self.star_buttons = []
-
-        self.current_stars = 2
-
-        self.build_ui()
-
-    def build_ui(self):
-        for idx, section in enumerate(self.SECTION_CONFIGS):
-            frame = tk.Frame(
-                self.frame,
-                width=490,
-                height=section["height"]
-            )
-
-            frame.place(x=5, y=section["y"])
-            frame.pack_propagate(False)
-
-            self.create_section(frame, section, idx)
-
-    def create_section(self, parent, section, idx):
-        vars_ = {
-            "rank": tk.StringVar(value='2'),
-            "current": tk.StringVar(value='1'),
-            "res": tk.StringVar(value='+0'),
-            "gp": tk.StringVar(value='0'),
-            "copies": tk.StringVar(value='0'),
-            "cr": tk.StringVar(value='+0'),
-            "weighted_gp": tk.StringVar(value='0'),
-            "weighted_cp": tk.StringVar(value='0')
-        }
-
-        self.widgets.append(vars_)
-
-        tk.Label(
-            parent,
-            text=section["label"],
-            font=("Arial", 10, "bold")
-        ).place(x=30, y=10)
-
-        self.build_stars(parent, section, idx)
-
-        if idx < 2:
-            self.add_separator(parent, 30, 140, 420, 2)
-
-        left_fields = [
-            ("Current Rank:", vars_["current"], self.FIELD_Y["current"], 1, 10),
-            ("Target Rank:", vars_["rank"], self.FIELD_Y["target"], 2, 10),
-            ("Gem Power (bag):", vars_["weighted_gp"], self.FIELD_Y["gp_bag"], 0, 99999),
-            ("Copies (bag):", vars_["weighted_cp"], self.FIELD_Y["cp_bag"], 0, 9999)
-        ]
-
-        for label, var, y, min_v, max_v in left_fields:
-            self.create_input_field(
-                parent,
-                label,
-                var,
-                y,
-                idx,
-                min_v,
-                max_v
-            )
-
-        results = [
-            ("Resonance:", vars_["res"], self.RESULT_Y["res"], 'green'),
-            ("Combat Rating:", vars_["cr"], self.RESULT_Y["cr"], 'green'),
-            ("GP Needed:", vars_["gp"], self.RESULT_Y["gp"]),
-            ("Copies Needed:", vars_["copies"], self.RESULT_Y["cp"])
-        ]
-
-        for item in results:
-            self.create_result_field(parent, *item)
-
-        self.update_resonance_and_costs(idx)
-
-    def build_stars(self, parent, section, idx):
-        if idx < 2:
-            for i in range(section["stars"]):
-                tk.Label(
-                    parent,
-                    text='★',
-                    font=("Arial", 12),
-                    fg='#FFD700'
-                ).place(x=140 + (i * 20), y=6)
-
-            return
-
-        for i in range(5):
-            btn = tk.Button(
-                parent,
-                text='★' if i < self.current_stars else '☆',
-                font=("Arial", 12),
-                bd=0,
-                fg='#FFD700',
-                command=lambda s=i: self.set_stars(s + 1)
-            )
-
-            btn.place(x=140 + (i * 20), y=6, width=18, height=22)
-
-            self.star_buttons.append(btn)
-
-    def create_input_field(self, parent, label, var, y, idx, min_v, max_v):
-        tk.Label(parent, text=label).place(x=30, y=y + 2)
-
-        entry = tk.Entry(parent, textvariable=var, justify='right')
-
-        entry.place(x=140, y=y, width=50, height=20)
-
-        entry.bind(
-            "<Up>",
-            lambda e, v=var, mn=min_v, mx=max_v, i=idx:
-            self.adj_val(v, 1, mn, mx, i)
-        )
-
-        entry.bind(
-            "<Down>",
-            lambda e, v=var, mn=min_v, mx=max_v, i=idx:
-            self.adj_val(v, -1, mn, mx, i)
-        )
-
-        entry.bind(
-            "<KeyRelease>",
-            lambda e, i=idx: self.update_resonance_and_costs(i)
-        )
-
-    def create_result_field(self, parent, label, var, y, fg='black'):
-        tk.Label(parent, text=label).place(x=280, y=y + 2)
-
-        tk.Entry(
-            parent,
-            textvariable=var,
-            justify='right',
-            state='readonly',
-            fg=fg
-        ).place(x=380, y=y, width=65, height=20)
-
-    def add_separator(self, parent, x, y, length, thickness, color='#585656'):
-        tk.Frame(
-            parent,
-            bg=color,
-            width=length,
-            height=thickness
-        ).place(x=x, y=y)
-
-    def parse_int(self, value):
-        try:
-            return int(value or 0)
-        except ValueError:
-            return 0
-
-    def adj_val(self, var, delta, min_val, max_val, idx):
-        value = self.parse_int(var.get())
-
-        value = max(min_val, min(max_val, value + delta))
-
-        var.set(str(value))
-
-        self.update_resonance_and_costs(idx)
-
-    def set_stars(self, count):
-        self.current_stars = max(2, min(count, 5))
-
-        for i, btn in enumerate(self.star_buttons):
-            btn.config(text='★' if i < self.current_stars else '☆')
-
-        self.update_resonance_and_costs(2)
-
-    def get_section_costs(self, idx):
-        if idx == 0:
-            return {
-                "res": 15,
-                "cr": 4,
-                "gp": [1,5,10,15,20,25,30,40,50],
-                "copies": [0,0,0,0,1,1,1,1,1]
-            }
-
-        if idx == 1:
-            return {
-                "res": 30,
-                "cr": 6,
-                "gp": [5,15,25,20,85,85,105,150,195],
-                "copies": [0,0,1,2,5,5,6,9,12]
-            }
-
-        stars = self.current_stars
-
-        return {
-            "res": 80 if stars < 4 else (90 if stars == 4 else 100),
-            "cr": {2:12, 3:18, 4:22, 5:24}[stars],
-            "gp": [50,75,100,250,375,725,725,1075,1075],
-            "copies": [0,1,1,5,6,12,12,18,18]
-        }
-
-    def update_resonance_and_costs(self, idx):
-        w = self.widgets[idx]
-
-        rank = max(1, min(10, self.parse_int(w["rank"].get())))
-        current = max(1, min(10, self.parse_int(w["current"].get())))
-
-        w["rank"].set(str(rank))
-        w["current"].set(str(current))
-
-        if current >= rank:
-            w["res"].set("+0")
-            w["cr"].set("+0")
-            w["gp"].set("0")
-            w["copies"].set("0")
-            return
-
-        weighted_gp = self.parse_int(w["weighted_gp"].get())
-        weighted_cp = self.parse_int(w["weighted_cp"].get())
-
-        config = self.get_section_costs(idx)
-
-        diff = rank - current
-
-        gp_needed = sum(config["gp"][r - 1] for r in range(current, rank))
-        cp_needed = sum(config["copies"][r - 1] for r in range(current, rank))
-
-        w["res"].set(f"+{config['res'] * diff}")
-        w["cr"].set(f"+{config['cr'] * diff}")
-
-        w["gp"].set(str(max(0, gp_needed - weighted_gp)))
-        w["copies"].set(str(max(0, cp_needed - weighted_cp)))
-
-    def reset(self):
-        self.set_stars(2)
-
-        for idx, w in enumerate(self.widgets):
-            w["rank"].set("2")
-            w["current"].set("1")
-            w["weighted_gp"].set("0")
-            w["weighted_cp"].set("0")
-
-            self.update_resonance_and_costs(idx)
-        
-# Internal Gems Tab
-class InternalGemsCalc:
-    def __init__(self, parent):
-        self.frame = ttk.Frame(parent, width=500, height=500)
-        self.frame.pack_propagate(False)
-        self.frame.pack(fill="both", expand=False)
-
-        self.widgets = []
-        self.star_buttons = []
-        self.current_stars = 2
-
-        self.sections = [
-            {"stars": 1, "label": "1-Star Gem", "y": 0, "h": 150},
-            {"stars": 2, "label": "2-Star Gem", "y": 145, "h": 150},
-            {"stars": 2, "label": "2-5 Star Gem", "y": 290, "h": 170},
-        ]
-
-        self.build_ui()
-
-    def build_ui(self):
-        for i, s in enumerate(self.sections):
-            f = tk.Frame(self.frame, width=490, height=s["h"])
-            f.place(x=5, y=s["y"])
-            f.pack_propagate(False)
-            self.create_section(f, s, i)
-
-    def create_section(self, parent, section, idx):
-        v = {
-            "rank": tk.StringVar(value="2"),
-            "curr": tk.StringVar(value="1"),
-            "res": tk.StringVar(value="+0"),
-            "gp": tk.StringVar(value="0"),
-            "cp": tk.StringVar(value="0"),
-            "wgp": tk.StringVar(value="0"),
-            "wcp": tk.StringVar(value="0"),
-        }
-
-        self.widgets.append(v)
-
-        tk.Label(parent, text=section["label"], font=("Arial", 10, "bold")).place(x=30, y=10)
-
-        self._build_stars(parent, section, idx)
-
-        if idx < 2:
-            self.add_separator(parent, 30, 140, 420, 2, 'horizontal', '#585656')
-
-        fields = [
-            ("Current Rank:", v["curr"], 34, 1, 9),
-            ("Target Rank:", v["rank"], 58, 2, 10),
-            ("Gem Power (bag):", v["wgp"], 82, 0, 99999),
-            ("Copies (bag):", v["wcp"], 106, 0, 9999),
-        ]
-
-        for label, var, y, mn, mx in fields:
-            tk.Label(parent, text=label).place(x=30, y=y + 2)
-            e = tk.Entry(parent, textvariable=var, justify="right")
-            e.place(x=140, y=y, width=50, height=20)
-
-            e.bind("<Up>", lambda ev, v=var, i=idx: self.adj_val(v, 1, mn, mx, i))
-            e.bind("<Down>", lambda ev, v=var, i=idx: self.adj_val(v, -1, mn, mx, i))
-            e.bind("<KeyRelease>", lambda ev, i=idx: self.update_resonance_and_costs(i))
-
-        results = [
-            ("Resonance:", v["res"], 34, "green", True),
-            ("GP Needed:", v["gp"], 82, None, False),
-            ("Copies Needed:", v["cp"], 106, None, False),
-        ]
-
-        for label, var, y, fg, ro in results:
-            tk.Label(parent, text=label).place(x=280, y=y + 2)
-
-            e = tk.Entry(parent, textvariable=var, justify="right", state="readonly")
-            if fg:
-                e.config(fg=fg)
-
-            e.place(x=380, y=y, width=65, height=20)
-
-        self.update_resonance_and_costs(idx)
-
-    def _build_stars(self, parent, section, idx):
-        if idx < 2:
-            for i in range(section["stars"]):
-                tk.Label(parent, text="★", font=("Arial", 12), fg="#FFD700").place(
-                    x=140 + i * 20, y=6
-                )
-            return
-
-        for i in range(5):
-            b = tk.Button(
-                parent,
-                text="★" if i < self.current_stars else "☆",
-                font=("Arial", 12),
-                bd=0,
-                fg="#FFD700",
-                command=lambda s=i: self.set_stars(s + 1),
-            )
-            b.place(x=140 + i * 20, y=6, width=18, height=22)
-            self.star_buttons.append(b)
-
-    def add_separator(self, parent, x, y, length, thickness, orientation, color):
-        tk.Frame(parent, bg=color).place(
-            x=x,
-            y=y,
-            width=length if orientation == "horizontal" else thickness,
-            height=thickness if orientation == "horizontal" else length,
-        )
-
-    def adj_val(self, var, delta, mn, mx, idx):
-        try:
-            v = int(var.get() or 0)
-        except ValueError:
-            v = 0
-
-        var.set(str(max(mn, min(mx, v + delta))))
-        self.update_resonance_and_costs(idx)
-
-    def set_stars(self, count):
-        self.current_stars = max(2, min(5, count))
-
-        for i, b in enumerate(self.star_buttons):
-            b.config(text="★" if i < self.current_stars else "☆")
-
-        self.update_resonance_and_costs(2)
-
-    def update_resonance_and_costs(self, idx):
-        w = self.widgets[idx]
-
-        try:
-            dr = max(2, min(10, int(w["rank"].get() or 0)))
-            cr = max(1, min(9, int(w["curr"].get() or 0)))
-
-            w["rank"].set(str(dr))
-            w["curr"].set(str(cr))
-
-            wg = int(w["wgp"].get() or 0)
-            wc = int(w["wcp"].get() or 0)
-
-        except:
-            return
-
-        if idx == 0:
-            res_m = 1
-            gp = [1,5,10,15,20,25,30,40,50]
-            cp = [0,0,0,0,1,1,1,1,1]
-
-        elif idx == 1:
-            res_m = 2
-            gp = [5,15,25,20,85,85,105,150,195]
-            cp = [0,0,1,2,5,5,6,9,12]
-
-        else:
-            s = self.current_stars
-            res_m = 10 if s in (2,3) else 10.5 if s == 4 else 11
-            gp = [50,75,100,250,375,725,725,1075,1075]
-            cp = [0,1,1,5,6,12,12,18,18]
-
-        if cr >= dr:
-            w["res"].set("+0")
-            w["gp"].set("0")
-            w["cp"].set("0")
-            return
-
-        diff = dr - cr
-        w["res"].set(f"+{diff * res_m:g}")
-
-        w["gp"].set(str(max(0, sum(gp[cr-1:dr-1]) - wg)))
-        w["cp"].set(str(max(0, sum(cp[cr-1:dr-1]) - wc)))
-
-    def reset(self):
-        self.set_stars(2)
-
-        for i, w in enumerate(self.widgets):
-            w["rank"].set("2")
-            w["curr"].set("1")
-            w["wgp"].set("0")
-            w["wcp"].set("0")
-            self.update_resonance_and_costs(i)
-
-# Normal Gems Tab
-class NormalGemsCalc:
-    def __init__(self, parent):
-        self.frame = ttk.Frame(parent, width=500, height=500)
-        self.frame.pack_propagate(False)
-        self.frame.pack(fill="both", expand=True)
-
-        self.req_copies = [3**(i-1) for i in range(1, 11)]
-        self.base_fees = {6: 1, 7: 5, 8: 15, 9: 35, 10: 75}
-        
-        self.cum_costs = {i: 0 for i in range(1, 11)}
-        for r in range(6, 11):
-            self.cum_costs[r] = (self.cum_costs[r-1] * 3) + self.base_fees[r]
-        
-        self.rank_vars = [tk.StringVar(value='0') for _ in range(10)]
-        self.target_rank_var = tk.StringVar(value='1')
-        self.target_qty_var = tk.StringVar(value='1')
-        self.market_val_var = tk.StringVar(value='0')
-        self.total_have_var = tk.StringVar(value='0')
-        self.total_leftover_var = tk.StringVar(value='0')
-        self.crystals_needed_var = tk.StringVar(value='0')
-        self.platinum_needed_var = tk.StringVar(value='0')
-
-        self.coords = {
-            "top_y": 10,
-            "row_height": 24,
-            "col1_x": 15,
-            "col2_x": 140,
-            "table_start_y": 80,
-            "divider_x": 260,
-            "legend_x": 285,
-            "legend_y": 10
-        }
-
-        self.build_ui()
-        self.update_count()
-
-    def build_ui(self):
-        c = self.coords
-        vcmd = (self.frame.register(lambda P: P.isdigit() or P == ""), '%P')
-
-        self.add_separator(self.frame, c["divider_x"], 10, 460, 2, 'vertical', '#585656')
-
-        tk.Label(self.frame, text="Target Rank:", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=c["top_y"])
-        t_ent = tk.Entry(self.frame, textvariable=self.target_rank_var, width=8, justify='right', validate='key', validatecommand=vcmd)
-        t_ent.place(x=c["col2_x"], y=c["top_y"])
-
-        qty_y = c["top_y"] + 25
-        tk.Label(self.frame, text="Target Quantity:", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=qty_y)
-        q_ent = tk.Entry(self.frame, textvariable=self.target_qty_var, width=8, justify='right', validate='key', validatecommand=vcmd)
-        q_ent.place(x=c["col2_x"], y=qty_y)
-
-        header_y = c["table_start_y"] - 22
-        tk.Label(self.frame, text="Rank", font=("Arial", 10, "bold"), fg="black").place(x=c["col1_x"], y=header_y)
-        tk.Label(self.frame, text="Have Quantity", font=("Arial", 10, "bold"), fg="black").place(x=c["col2_x"] - 15, y=header_y)
-
-        for i in range(10):
-            y = c["table_start_y"] + i * c["row_height"]
-            tk.Label(self.frame, text=f"{i + 1}", font=("Arial", 10), fg="black").place(x=c["col1_x"] + 10, y=y)
-            ev = self.rank_vars[i]
-            ent = tk.Entry(self.frame, textvariable=ev, width=8, justify='right', validate='key', validatecommand=vcmd)
-            ent.place(x=c["col2_x"], y=y)
-            ev.trace_add("write", lambda *a: self.update_count())
-
-        for e in [t_ent, q_ent]:
-            e.bind("<Up>", self.on_arrow_up)
-            e.bind("<Down>", self.on_arrow_down)
-        self.target_rank_var.trace_add("write", lambda *a: self.update_count())
-        self.target_qty_var.trace_add("write", lambda *a: self.update_count())
-
-        tk.Label(self.frame, text="Copies Required:", font=("Arial", 10, "bold"), fg="black").place(x=c["legend_x"], y=c["legend_y"])
-        for idx, val in enumerate(self.req_copies, start=1):
-            lbl = f"R{idx}: {val:,}"
-            tk.Label(self.frame, text=lbl, font=("Arial", 9), fg="black").place(x=c["legend_x"], y=c["legend_y"] + 20 + (idx-1) * 19)
-
-        c_legend_y = c["legend_y"] + 230
-        tk.Label(self.frame, text="Crystals Required:", font=("Arial", 10, "bold"), fg="black").place(x=c["legend_x"], y=c_legend_y)
-        for i, (rnk, cost) in enumerate(self.base_fees.items()):
-            tk.Label(self.frame, text=f"R{rnk}: {cost}", font=("Arial", 9), fg="black").place(x=c["legend_x"], y=c_legend_y + 20 + (i * 19))
-
-        results_y = c["table_start_y"] + 10 * c["row_height"] + 2
-        entry_x = c["col2_x"] + 25 
-        res_width = 14 
-        
-        tk.Label(self.frame, text="Total Copies:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y)
-        self.total_have_entry = tk.Entry(self.frame, textvariable=self.total_have_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold"))
-        self.total_have_entry.place(x=entry_x - 25, y=results_y)
-
-        tk.Label(self.frame, text="Total Remaining:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 24)
-        tk.Entry(self.frame, textvariable=self.total_leftover_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 24)
-
-        tk.Label(self.frame, text="Market Value:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 48)
-        m_ent = tk.Entry(self.frame, textvariable=self.market_val_var, width=res_width, justify='right', font=("Arial", 10))
-        m_ent.place(x=entry_x - 25, y=results_y + 48)
-        m_ent.bind("<Up>", self.on_arrow_up)
-        m_ent.bind("<Down>", self.on_arrow_down)
-        self.market_val_var.trace_add("write", lambda *a: self.update_count())
-
-        tk.Label(self.frame, text="Crystals Needed:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 72)
-        tk.Entry(self.frame, textvariable=self.crystals_needed_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 72)
-
-        tk.Label(self.frame, text="Platinum Needed:", font=("Arial", 10), fg="black").place(x=c["col1_x"], y=results_y + 96)
-        tk.Entry(self.frame, textvariable=self.platinum_needed_var, width=res_width, justify='right', state='readonly', font=("Arial", 10, "bold")).place(x=entry_x - 25, y=results_y + 96)
-
-    def add_separator(self, parent, x, y, length, thickness, orientation, color):
-        f = tk.Frame(parent, bg=color)
-        f.place(x=x, y=y, width=length if orientation=='horizontal' else thickness, height=thickness if orientation=='horizontal' else length)
-
-    def update_count(self):
-        def parse_int(var, default=0):
-            try:
-                val = var.get().strip().replace(',', '')
-                return int(val) if val else default
-            except: return default
-
-        tr = max(1, min(10, parse_int(self.target_rank_var, 1)))
-        
-        tq = max(1, parse_int(self.target_qty_var, 1))
-        
-        if self.target_qty_var.get() and parse_int(self.target_qty_var, 1) < 1:
-            self.target_qty_var.set("1")
-            
-        mv = parse_int(self.market_val_var, 0)
-
-        cost_per_target_gem = self.req_copies[tr - 1]
-        total_needed_equiv = cost_per_target_gem * tq
-        have_equiv = sum(parse_int(self.rank_vars[i]) * self.req_copies[i] for i in range(10))
-        remaining_copies = max(total_needed_equiv - have_equiv, 0)
-
-        total_crystals_goal = self.cum_costs[tr] * tq
-        have_crystal_val = sum(parse_int(self.rank_vars[i]) * self.cum_costs[i+1] for i in range(10))
-        final_crystals = max(0, total_crystals_goal - have_crystal_val)
-        
-        crystal_plat = final_crystals * 500
-        market_plat = remaining_copies * mv
-        platinum_total = crystal_plat + market_plat
-        
-        if have_equiv > total_needed_equiv:
-            excess = have_equiv - total_needed_equiv
-            self.total_have_var.set(f"Excess: {excess:,}")
-            self.total_have_entry.config(fg="red")
-        else:
-            self.total_have_var.set(f"{have_equiv:,}")
-            self.total_have_entry.config(fg="black")
-
-        self.total_leftover_var.set(f"{remaining_copies:,}")
-        self.crystals_needed_var.set(f"{final_crystals:,}")
-        self.platinum_needed_var.set(f"{platinum_total:,}")
-
-    def on_arrow_up(self, event):
-        entry = event.widget
-        try: val = int(entry.get().replace(',', '') or 0)
-        except: val = 0
-        if entry.cget('textvariable') == str(self.target_rank_var): new_val = min(10, val + 1)
-        else: new_val = val + 1
-        entry.delete(0, tk.END); entry.insert(0, str(new_val))
-        self.update_count()
-        return "break"
-
-    def on_arrow_down(self, event):
-        entry = event.widget
-        try: val = int(entry.get().replace(',', '') or 0)
-        except: val = 0
-        
-        if entry.cget('textvariable') in (str(self.target_rank_var), str(self.target_qty_var)): 
-            new_val = max(1, val - 1)
-        else: 
-            new_val = max(0, val - 1)
-            
-        entry.delete(0, tk.END); entry.insert(0, str(new_val))
-        self.update_count()
-        return "break"
-        
-    def reset(self):
-        self.target_rank_var.set("1")
-        self.target_qty_var.set("1")
-        self.market_val_var.set("0")
-        for v in self.rank_vars:
-            v.set("0")
-        self.update_count()
-
-# Iben Fahd's Tab
-class HoradricVesselsCalc:
-    vessel_labels = [
-        "Armor Penetration", "Armor", "Potency/Resistance", "Potency",
-        "Damage/Life", "Armor Penetration/Armor", "Life", "Resistance", "Damage"
-    ]
-    vessel_multiplier = [
-        (18, 0), (18, 0), (9, 9), (18, 0), (9, 9), (9, 9), (18, 0), (18, 0), (18, 0)
-    ]
-    MAX_RANK = 60
-
-    vessel_cost_per_rank_logic = [
-        0, 10, 30, 30, 50, 70, 10, 30, 30, 50, 70, 90, 110, 130, 150, 200, 250, 300,
-        350, 400, 450, 500, 550, 600, 650, 700, 800, 900, 1000, 1100, 1200, 1300,
-        1400, 1500, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600,
-        3800, 4100, 4400, 4700, 5000, 5300, 5600, 5900, 6200, 6500, 7000, 7500, 8000,
-        8500, 9000, 9500, 10000, 10500, 11000, 11500, 12000
-    ]
-
-    def __init__(self, parent):
-        self.frame = ttk.Frame(parent, width=500, height=500)
-        self.frame.pack_propagate(False)
-        
-        self.current_rank_vars = [tk.StringVar(value="0") for _ in range(9)]
-        self.target_rank_vars = [tk.StringVar(value="0") for _ in range(9)]
-        
-        self.stat_inc_vars = []
-        for m1, m2 in self.vessel_multiplier:
-            default_val = "+0" if m2 == 0 else "+0/+0"
-            self.stat_inc_vars.append(tk.StringVar(value=default_val))
-
-        self.cost_vars = [tk.StringVar(value="---") for _ in range(3)]
-        self.platinum_vars = [tk.StringVar(value="---") for _ in range(3)]
-        self.est_days_var = tk.StringVar(value="Estimated days: 0")
-
-        self.build_ui()
-
-    def build_ui(self):
-        self.frame.pack(fill="both", expand=True)
-        header_font = ("Arial", 10, "bold")
-
-        col_0_x, col_0_w = 10, 160
-        col_1_x, col_1_w = 170, 90
-        col_2_x, col_2_w = 270, 90
-        col_3_x, col_3_w = 360, 120
-        
-        upper_header_y = 10
-        row_start_y = 35
-        row_spacing = 22
-        entry_offset_x = 15
-        entry_w = 50
-        
-        sep_x, sep_y, sep_w = 10, 240, 480
-        
-        lower_header_y = 245
-        stone_cost_y = 270
-        platinum_cost_y = 295
-        eta_y = 340
-        
-        disc_x = 5
-        disc1_y = 380
-        disc2_y = 400
-        disc3_y = 420
-
-        tk.Label(self.frame, text="Vessel", font=header_font, anchor="w").place(x=col_0_x, y=upper_header_y, width=col_0_w)
-        tk.Label(self.frame, text="Current Rank", font=header_font, anchor="center").place(x=col_1_x, y=upper_header_y, width=col_1_w)
-        tk.Label(self.frame, text="Target Rank", font=header_font, anchor="center").place(x=col_2_x, y=upper_header_y, width=col_2_w)
-        tk.Label(self.frame, text="Stat Increase", font=header_font, anchor="center").place(x=col_3_x, y=upper_header_y, width=col_3_w)
-
-        for i, label in enumerate(self.vessel_labels):
-            y_pos = row_start_y + (i * row_spacing)
-            
-            tk.Label(self.frame, text=label, anchor='w').place(x=col_0_x, y=y_pos, width=col_0_w)
-            
-            cur_ent = tk.Entry(self.frame, textvariable=self.current_rank_vars[i], justify='right')
-            cur_ent.place(x=col_1_x + entry_offset_x, y=y_pos, width=entry_w)
-            cur_ent.bind("<Up>", lambda e, idx=i: self.adj_rank(idx, 1, self.current_rank_vars))
-            cur_ent.bind("<Down>", lambda e, idx=i: self.adj_rank(idx, -1, self.current_rank_vars))
-            self.current_rank_vars[i].trace_add("write", lambda *a, idx=i: self.update_row(idx))
-
-            tar_ent = tk.Entry(self.frame, textvariable=self.target_rank_vars[i], justify='right')
-            tar_ent.place(x=col_2_x + entry_offset_x, y=y_pos, width=entry_w)
-            tar_ent.bind("<Up>", lambda e, idx=i: self.adj_rank(idx, 1, self.target_rank_vars))
-            tar_ent.bind("<Down>", lambda e, idx=i: self.adj_rank(idx, -1, self.target_rank_vars))
-            self.target_rank_vars[i].trace_add("write", lambda *a, idx=i: self.update_row(idx))
-
-            tk.Label(self.frame, textvariable=self.stat_inc_vars[i], fg="green", anchor='center').place(x=col_3_x, y=y_pos, width=col_3_w)
-
-        self.add_separator(x=sep_x, y=sep_y, length=sep_w, thickness=2, orientation='horizontal', color='#585656')
-
-        tk.Label(self.frame, text="Stone Type", font=header_font, anchor="w").place(x=col_0_x, y=lower_header_y, width=col_0_w)
-        tk.Label(self.frame, text="Beryl", font=header_font, fg="green", anchor="center").place(x=col_1_x, y=lower_header_y, width=col_1_w)
-        tk.Label(self.frame, text="Garnet", font=header_font, fg="#ff3333", anchor="center").place(x=col_2_x, y=lower_header_y, width=col_2_w)
-        tk.Label(self.frame, text="Sapphire", font=header_font, fg="#3333ff", anchor="center").place(x=col_3_x, y=lower_header_y, width=col_3_w)
-
-        tk.Label(self.frame, text="Stone Cost:", font=("Arial", 9), anchor="w").place(x=col_0_x, y=stone_cost_y, width=col_0_w)
-        tk.Label(self.frame, textvariable=self.cost_vars[1], anchor="center").place(x=col_1_x, y=stone_cost_y, width=col_1_w) 
-        tk.Label(self.frame, textvariable=self.cost_vars[0], anchor="center").place(x=col_2_x, y=stone_cost_y, width=col_2_w) 
-        tk.Label(self.frame, textvariable=self.cost_vars[2], anchor="center").place(x=col_3_x, y=stone_cost_y, width=col_3_w)
-
-        tk.Label(self.frame, text="Platinum Cost:", font=("Arial", 9), anchor="w").place(x=col_0_x, y=platinum_cost_y, width=col_0_w)
-        tk.Label(self.frame, textvariable=self.platinum_vars[1], anchor="center").place(x=col_1_x, y=platinum_cost_y, width=col_1_w)
-        tk.Label(self.frame, textvariable=self.platinum_vars[0], anchor="center").place(x=col_2_x, y=platinum_cost_y, width=col_2_w)
-        tk.Label(self.frame, textvariable=self.platinum_vars[2], anchor="center").place(x=col_3_x, y=platinum_cost_y, width=col_3_w)
-
-        tk.Label(self.frame, textvariable=self.est_days_var, font=("Arial", 9), anchor="w").place(x=col_0_x, y=eta_y, width=300)
-
-        line1 = "Platinum cost is based on 18,000 for full clear, averaging 1,866 stones (~9.6 per stone)."
-        line2 = "The platinum cost affords a rank for 3 vessels at once that use different stone names."
-        line3 = "The estimated days is a division of the highest culling stone by 1866 daily average."
-        
-        tk.Label(self.frame, text=line1, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc1_y)
-        tk.Label(self.frame, text=line2, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc2_y)
-        tk.Label(self.frame, text=line3, font=("Arial", 9), fg="black", anchor="w").place(x=disc_x, y=disc3_y)
-
-    def add_separator(self, x, y, length, thickness=1, orientation='horizontal', color='#585656'):
-        line = tk.Frame(self.frame, bg=color, 
-                        height=thickness if orientation == 'horizontal' else length, 
-                        width=length if orientation == 'horizontal' else thickness)
-        line.place(x=x, y=y)
-
-    def adj_rank(self, idx, delta, var_list):
-        try:
-            curr_val = var_list[idx].get()
-            val = int(curr_val) if curr_val.isdigit() else 0
-            new_val = max(0, min(self.MAX_RANK, val + delta))
-            var_list[idx].set(str(new_val))
-        except:
-            var_list[idx].set("0")
-
-    def update_row(self, idx):
-        try:
-            c_val = self.current_rank_vars[idx].get()
-            t_val = self.target_rank_vars[idx].get()
-            c_rank = int(c_val) if c_val.isdigit() else 0
-            t_rank = int(t_val) if t_val.isdigit() else 0
-        except: 
-            c_rank, t_rank = 0, 0
-
-        rank_diff = max(0, t_rank - c_rank)
-        m1, m2 = self.vessel_multiplier[idx]
-        self.stat_inc_vars[idx].set(f"+{rank_diff * m1}" if m2 == 0 else f"+{rank_diff * m1}/+{rank_diff * m2}")
-
-        group_mapping = {0: 0, 3: 0, 8: 0, 1: 1, 6: 1, 7: 1, 2: 2, 4: 2, 5: 2}
-        group_totals = [0, 0, 0]
-        for g_id in range(3):
-            vessels_in_group = [v_idx for v_idx, target_g in group_mapping.items() if target_g == g_id]
-            for v_idx in vessels_in_group:
-                cv = int(self.current_rank_vars[v_idx].get()) if self.current_rank_vars[v_idx].get().isdigit() else 0
-                tv = int(self.target_rank_vars[v_idx].get()) if self.target_rank_vars[v_idx].get().isdigit() else 0
-                if tv > cv:
-                    safe_t = min(tv, len(self.vessel_cost_per_rank_logic) - 1)
-                    group_totals[g_id] += sum(self.vessel_cost_per_rank_logic[cv + 1 : safe_t + 1])
-
-            if group_totals[g_id] > 0:
-                self.cost_vars[g_id].set("{:,}".format(group_totals[g_id]))
-                self.platinum_vars[g_id].set("{:,}".format(math.ceil(group_totals[g_id] * 9.6)))
-            else:
-                self.cost_vars[g_id].set("---")
-                self.platinum_vars[g_id].set("---")
-
-        max_stone_cost = max(group_totals)
-        if max_stone_cost > 0:
-            days = max_stone_cost / 1866
-            self.est_days_var.set(f"Estimated days: {days:.1f}")
-        else:
-            self.est_days_var.set("Estimated days: 0")
-
-    def reset(self):
-        for i in range(9):
-            self.current_rank_vars[i].set("0")
-            self.target_rank_vars[i].set("0")
-
 if __name__ == "__main__":
     root = tk.Tk()
     root.title("Diablo Immortal Calculator")
@@ -1293,6 +1094,14 @@ if __name__ == "__main__":
     changelog_view = tk.Frame(root, bg="#f0f0f0")
 
     changelog_text = (
+        
+        "18/06/2026:\n"
+        "* The new changes in-game for combat rating on gear now rolls randomly in a range rather than being static gains per magic property/triple attributes, making the first tab obsolete and is removed\n"
+        "* Tabs have been re-arranged based on how common players use the systems\n"
+        "* Fixed the 'Have Quantity' cells in Normal Gems tab that wasn't supporting arrow keys up/down\n"
+        "* Corrected the 'Current Rank' cells in Iben Fahd's tab to start at a default value of 1 instead of 0\n"
+        "* Corrected rank costs between 1>11 in Iben Fahd's tab (530 culling stones missing in difference)\n"
+        "------------------------------------------------------------------------------------------------------------------\n"
         "29/05/2026:\n"
         "* Changed compile scripts to recognise current path for Windows and MAC OS\n"
         "------------------------------------------------------------------------------------------------------------------\n"
@@ -1401,20 +1210,18 @@ if __name__ == "__main__":
     notebook = ttk.Notebook(root)
     
     tabs = [
-        CombatRatingCalc(notebook),
-        GearRanksCalc(notebook),
+        NormalGemsCalc(notebook),
         LegendaryGemsCalc(notebook),
         InternalGemsCalc(notebook),
-        NormalGemsCalc(notebook),
-        HoradricVesselsCalc(notebook)
+        HoradricVesselsCalc(notebook),
+        GearRanksCalc(notebook)
     ]
 
-    notebook.add(tabs[0].frame, text="Combat Rating")
-    notebook.add(tabs[1].frame, text="Gear Ranks")
-    notebook.add(tabs[2].frame, text="Legendary Gems")
-    notebook.add(tabs[3].frame, text="Internal Gems")
-    notebook.add(tabs[4].frame, text="Normal gems")
-    notebook.add(tabs[5].frame, text="Iben Fahd's")
+    notebook.add(tabs[0].frame, text="Normal Gems")
+    notebook.add(tabs[1].frame, text="Legendary Gems")
+    notebook.add(tabs[2].frame, text="Internal Gems")
+    notebook.add(tabs[3].frame, text="Iben Fahd's")
+    notebook.add(tabs[4].frame, text="Gear Ranks")
     notebook.pack(fill="both", expand=True)
 
     root.mainloop()
